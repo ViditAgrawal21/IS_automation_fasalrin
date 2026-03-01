@@ -1,0 +1,5 @@
+playwright
+openpyxl
+pandas
+cryptography
+Pillow

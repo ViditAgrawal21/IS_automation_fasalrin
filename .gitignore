@@ -1,0 +1,55 @@
+# ═══════════════════════════════════════════════════════════════
+# IS Claim Automation — .gitignore
+# ═══════════════════════════════════════════════════════════════
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+*.egg-info/
+dist/
+build/
+*.egg
+*.spec
+
+# Virtual environment
+venv/
+.venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Secrets & credentials
+secret.key
+*.key
+
+# Profiles (contain encrypted passwords)
+profiles/*.json
+
+# Session files
+*_session.json
+
+# Logs
+logs/*.log
+logs/*.png
+
+# OS
+Thumbs.db
+.DS_Store
+desktop.ini
+
+# PyInstaller
+*.manifest
+*.spec
+build/
+dist/
+
+# Keep directories
+!logs/.gitkeep
+!profiles/.gitkeep
