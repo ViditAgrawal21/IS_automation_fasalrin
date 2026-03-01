@@ -27,7 +27,6 @@ def navigate_to_claim_list(page, log_callback=None):
     if "/claim-application-list" not in page.url:
         log("Navigating to Claim Application List...")
         page.goto(CLAIM_LIST_URL, wait_until="domcontentloaded")
-        page.wait_for_timeout(200)
 
     log("On Claim Application List page")
 
@@ -66,7 +65,7 @@ def select_filters_and_proceed(page, profile: dict, log_callback=None):
                 }
             }
         }""", fy)
-        page.wait_for_timeout(100)
+        page.wait_for_timeout(30)
     except Exception as e:
         raise Exception(f"Could not select Financial Year '{fy}': {e}")
 
@@ -80,7 +79,7 @@ def select_filters_and_proceed(page, profile: dict, log_callback=None):
             sel.value = val;
             sel.dispatchEvent(new Event('change', { bubbles: true }));
         }""", claim_type_val)
-        page.wait_for_timeout(100)
+        page.wait_for_timeout(30)
     except Exception as e:
         raise Exception(f"Could not select Claim Type '{claim_type}': {e}")
 
@@ -94,7 +93,7 @@ def select_filters_and_proceed(page, profile: dict, log_callback=None):
             sel.value = val;
             sel.dispatchEvent(new Event('change', { bubbles: true }));
         }""", claim_status_val)
-        page.wait_for_timeout(100)
+        page.wait_for_timeout(30)
     except Exception as e:
         raise Exception(f"Could not select Claim Status '{claim_status}': {e}")
 
@@ -104,7 +103,7 @@ def select_filters_and_proceed(page, profile: dict, log_callback=None):
         proceed_btn = page.locator("button.genGreenBtn:has-text('PROCEED')").first
         proceed_btn.wait_for(state="visible", timeout=5000)
         proceed_btn.click()
-        page.wait_for_timeout(400)
+        page.wait_for_timeout(100)
         log("PROCEED clicked — loading claim list")
     except Exception as e:
         raise Exception(f"Could not click PROCEED: {e}")
@@ -123,10 +122,7 @@ def select_filters_and_proceed(page, profile: dict, log_callback=None):
 def search_loan_application(page, loan_app_no: str, log_callback=None):
     """
     Search for a Loan Application Number in the claim list.
-
-    Args:
-        page: Playwright page.
-        loan_app_no: The Loan Application Number to search.
+    Raises if the account is not found in search results.
     """
     def log(msg):
         if log_callback:
@@ -142,7 +138,6 @@ def search_loan_application(page, loan_app_no: str, log_callback=None):
         # Clear previous search and enter new value
         search_input.click()
         search_input.fill("")
-        page.wait_for_timeout(100)
 
         # Use JS to set value for React compatibility
         page.evaluate("""(val) => {
@@ -154,31 +149,63 @@ def search_loan_application(page, loan_app_no: str, log_callback=None):
             el.dispatchEvent(new Event('input', { bubbles: true }));
             el.dispatchEvent(new Event('change', { bubbles: true }));
         }""", loan_app_no)
-        page.wait_for_timeout(100)
+        page.wait_for_timeout(30)
     except Exception as e:
         raise Exception(f"Could not fill search input: {e}")
 
     # ── Click Search button ──
     try:
         search_btn = page.locator("button.btn-secondary").first
-        if search_btn.is_visible(timeout=3000):
+        if search_btn.is_visible(timeout=2000):
             search_btn.click()
-            page.wait_for_timeout(400)
+            page.wait_for_timeout(300)
             log("Search executed")
         else:
-            # Some portals auto-search on input, press Enter as fallback
             search_input.press("Enter")
-            page.wait_for_timeout(400)
+            page.wait_for_timeout(300)
             log("Search executed (Enter key)")
     except Exception:
-        # Fallback: press Enter
         try:
             search_input = page.locator("input[type='search']").first
             search_input.press("Enter")
-            page.wait_for_timeout(400)
+            page.wait_for_timeout(300)
             log("Search executed (Enter fallback)")
         except Exception as e:
             raise Exception(f"Could not execute search: {e}")
+
+    # ── Check if results exist ──
+    page.wait_for_timeout(200)
+    no_results = page.evaluate("""() => {
+        // Check for "No data available" or empty table body
+        var body = document.body.innerText || '';
+        if (body.includes('No data available') || body.includes('No matching records'))
+            return true;
+        // Check if table has zero data rows
+        var rows = document.querySelectorAll('table tbody tr');
+        if (rows.length === 0) return true;
+        if (rows.length === 1) {
+            var text = rows[0].textContent.toLowerCase();
+            if (text.includes('no data') || text.includes('no record') || text.includes('no matching'))
+                return true;
+        }
+        // Check if ADD button exists
+        var addBtn = document.querySelector("button.edit-greenbtn");
+        if (!addBtn) {
+            var allBtns = document.querySelectorAll('button');
+            var hasAdd = false;
+            for (var i = 0; i < allBtns.length; i++) {
+                if (allBtns[i].textContent.trim().toUpperCase() === 'ADD') hasAdd = true;
+            }
+            if (!hasAdd) return true;
+        }
+        return false;
+    }""")
+
+    if no_results:
+        raise Exception(
+            f"Account not found — Loan Application '{loan_app_no}' does not exist "
+            f"in the claim list or has no pending claims."
+        )
 
 
 def click_add_button(page, log_callback=None):
@@ -200,7 +227,7 @@ def click_add_button(page, log_callback=None):
 
         add_btn.wait_for(state="visible", timeout=10000)
         add_btn.click()
-        page.wait_for_timeout(400)
+        page.wait_for_timeout(100)
         log("ADD clicked — claim form loading")
     except Exception as e:
         raise Exception(

@@ -23,8 +23,16 @@ def save_and_continue(page, log_callback=None):
     try:
         save_btn = page.locator("button.genGreenBtn:has-text('SAVE & CONTINUE')").first
         save_btn.wait_for(state="visible", timeout=10000)
+
+        # Wait for the button to become enabled (form must be valid)
+        for _ in range(30):
+            disabled = save_btn.get_attribute("disabled")
+            if disabled is None:
+                break
+            page.wait_for_timeout(200)
+
         save_btn.click()
-        page.wait_for_timeout(500)
+        page.wait_for_timeout(100)
     except Exception as e:
         raise Exception(f"Could not click SAVE & CONTINUE: {e}")
 
@@ -49,11 +57,15 @@ def submit_claim(page, log_callback=None):
 
     log("Clicking SUBMIT...")
 
+    # Wait for the preview/review page to fully load after SAVE & CONTINUE
+    page.wait_for_load_state("domcontentloaded")
+    page.wait_for_timeout(500)
+
     try:
         submit_btn = page.locator("button.genGreenBtn:has-text('SUBMIT')").first
-        submit_btn.wait_for(state="visible", timeout=10000)
+        submit_btn.wait_for(state="visible", timeout=15000)
         submit_btn.click()
-        page.wait_for_timeout(400)
+        page.wait_for_timeout(100)
     except Exception as e:
         raise Exception(f"Could not click SUBMIT: {e}")
 
@@ -65,9 +77,9 @@ def submit_claim(page, log_callback=None):
             ".swal2-actions button:has-text('Yes'), "
             ".swal2-actions button:has-text('OK')"
         ).first
-        if confirm_btn.is_visible(timeout=3000):
+        if confirm_btn.is_visible(timeout=2000):
             confirm_btn.click()
-            page.wait_for_timeout(500)
+            page.wait_for_timeout(100)
             log("Confirmation accepted")
     except Exception:
         pass  # No confirmation dialog, that's fine
@@ -203,7 +215,7 @@ def _parse_claim_id(text: str) -> str:
 
 def _handle_modal(page, log, expected_text: str, action_name: str):
     """
-    Wait for a success modal containing `expected_text` and click OK.
+    Wait for a success modal containing `expected_text`, log it, and click OK.
     """
     try:
         # Wait for SweetAlert2 popup
@@ -211,7 +223,7 @@ def _handle_modal(page, log, expected_text: str, action_name: str):
             ".swal2-popup, .swal2-container, .modal.show",
             timeout=15000
         )
-        page.wait_for_timeout(200)
+        page.wait_for_timeout(50)
 
         # Read modal text
         modal_text = page.evaluate("""() => {
@@ -229,6 +241,10 @@ def _handle_modal(page, log, expected_text: str, action_name: str):
     except Exception:
         log(f"Warning: No modal detected after {action_name}")
 
+    # Always click OK to dismiss the modal so the page can proceed
+    _click_ok_button(page)
+    page.wait_for_timeout(300)
+
 
 def _click_ok_button(page):
     """
@@ -245,7 +261,7 @@ def _click_ok_button(page):
             btn = page.locator(selector).first
             if btn.is_visible(timeout=1000):
                 btn.click()
-                page.wait_for_timeout(150)
+                page.wait_for_timeout(30)
                 return
         except Exception:
             continue

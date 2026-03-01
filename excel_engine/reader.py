@@ -4,6 +4,7 @@ Uses openpyxl for precise cell-level access with column index mapping.
 """
 
 import openpyxl
+from datetime import datetime, date
 from utils.constants import ClaimCol
 
 
@@ -38,12 +39,40 @@ def get_total_rows(ws) -> int:
     return 1  # Only header
 
 
+def _format_date(val) -> str:
+    """Format a datetime/date value to DD-MM-YYYY string for the portal."""
+    if isinstance(val, datetime):
+        return val.strftime("%d-%m-%Y")
+    if isinstance(val, date):
+        return val.strftime("%d-%m-%Y")
+    # Already a string — pass through
+    return str(val).strip()
+
+
 def _cell_str(ws, row, col) -> str:
     """Get cell value as a stripped string, or empty string if None."""
     val = ws.cell(row=row, column=col).value
     if val is None:
         return ""
     return str(val).strip()
+
+
+def _cell_numeric(ws, row, col) -> str:
+    """Get cell value as a clean numeric string (remove duplicate dots, etc.)."""
+    val = ws.cell(row=row, column=col).value
+    if val is None:
+        return ""
+    if isinstance(val, (int, float)):
+        # Format cleanly — avoid trailing .0 for integers
+        if isinstance(val, float) and val == int(val):
+            return str(int(val))
+        return str(val)
+    # String value — clean up
+    s = str(val).strip()
+    # Remove duplicate dots (e.g., "78..04" → "78.04")
+    while ".." in s:
+        s = s.replace("..", ".")
+    return s
 
 
 def _cell_val(ws, row, col):
@@ -59,10 +88,10 @@ def read_claim_row(ws, row: int) -> dict:
     return {
         "sr": _cell_val(ws, row, ClaimCol.SR),
         "loan_app_no": _cell_str(ws, row, ClaimCol.LOAN_APP_NO),
-        "first_disbursal_date": _cell_str(ws, row, ClaimCol.FIRST_DISBURSAL_DATE),
-        "rollover_date": _cell_str(ws, row, ClaimCol.ROLLOVER_DATE),
-        "max_withdrawal": _cell_str(ws, row, ClaimCol.MAX_WITHDRAWAL),
-        "applicable_is": _cell_str(ws, row, ClaimCol.APPLICABLE_IS),
+        "first_disbursal_date": _format_date(_cell_val(ws, row, ClaimCol.FIRST_DISBURSAL_DATE)) if _cell_val(ws, row, ClaimCol.FIRST_DISBURSAL_DATE) else "",
+        "rollover_date": _format_date(_cell_val(ws, row, ClaimCol.ROLLOVER_DATE)) if _cell_val(ws, row, ClaimCol.ROLLOVER_DATE) else "",
+        "max_withdrawal": _cell_numeric(ws, row, ClaimCol.MAX_WITHDRAWAL),
+        "applicable_is": _cell_numeric(ws, row, ClaimCol.APPLICABLE_IS),
         "claim_id": _cell_str(ws, row, ClaimCol.CLAIM_ID),
         "season": _cell_str(ws, row, ClaimCol.SEASON),
         "account_number": _cell_str(ws, row, ClaimCol.ACCOUNT_NUMBER),

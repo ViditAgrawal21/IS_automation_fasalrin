@@ -35,7 +35,7 @@ def perform_login(page, context, profile: dict, profile_name: str,
     # ── Navigate to login page ──
     log("Opening login page...")
     page.goto(LOGIN_URL, wait_until="domcontentloaded")
-    page.wait_for_timeout(300)
+    page.wait_for_timeout(100)
 
     # Check if session cookies made us already logged in
     if "/welcome" in page.url or "/dashboard" in page.url:
@@ -50,11 +50,11 @@ def perform_login(page, context, profile: dict, profile_name: str,
             window.history.pushState({}, '', '/login');
             window.dispatchEvent(new PopStateEvent('popstate'));
         }""")
-        page.wait_for_timeout(500)
+        page.wait_for_timeout(200)
 
         if "/login" not in page.url:
             page.evaluate("window.location.hash = '#/login'")
-            page.wait_for_timeout(400)
+            page.wait_for_timeout(200)
 
     log("On login page")
 

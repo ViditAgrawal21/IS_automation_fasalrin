@@ -100,7 +100,6 @@ def _reset_page_for_next_row(page, log):
     """
     try:
         page.keyboard.press("Escape")
-        page.wait_for_timeout(50)
     except Exception:
         pass
 
@@ -108,9 +107,9 @@ def _reset_page_for_next_row(page, log):
     for txt in ["OK", "Close", "×"]:
         try:
             btn = page.locator(f"button:has-text('{txt}')").first
-            if btn.is_visible(timeout=500):
+            if btn.is_visible(timeout=300):
                 btn.click()
-                page.wait_for_timeout(100)
+                page.wait_for_timeout(30)
         except Exception:
             pass
 
@@ -118,7 +117,6 @@ def _reset_page_for_next_row(page, log):
     try:
         from utils.constants import CLAIM_LIST_URL
         page.goto(CLAIM_LIST_URL, wait_until="domcontentloaded")
-        page.wait_for_timeout(200)
         log("Reset — back on Claim Application List")
     except Exception as e:
         log(f"Warning — page reset: {e}")
