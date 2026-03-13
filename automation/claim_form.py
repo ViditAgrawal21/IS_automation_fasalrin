@@ -57,7 +57,6 @@ def _close_any_calendar(page):
         var h = document.querySelector('h1,h2,h3,h4,h5,h6,.heading,.card-header');
         if (h) h.click();
     }""")
-    page.wait_for_timeout(100)
 
 
 def _set_rmdp_date(page, picker_index: int, date_str: str, log=None):
@@ -75,15 +74,14 @@ def _set_rmdp_date(page, picker_index: int, date_str: str, log=None):
     target_day, target_month, target_year = _parse_date(date_str)
 
     _close_any_calendar(page)
-    page.wait_for_timeout(100)
 
     # ── Find the specific .rmdp-container ──
     containers = page.locator(".rmdp-container")
     needed = picker_index + 1
-    for _ in range(30):
+    for _ in range(15):
         if containers.count() >= needed:
             break
-        page.wait_for_timeout(200)
+        page.wait_for_timeout(50)
     if containers.count() < needed:
         raise Exception(f"Need ≥{needed} .rmdp-container elements, found {containers.count()}")
 
@@ -91,25 +89,25 @@ def _set_rmdp_date(page, picker_index: int, date_str: str, log=None):
 
     # ── Click the input to open the calendar popup ──
     input_el = container.locator(".rmdp-input")
-    input_el.wait_for(state="visible", timeout=5000)
+    input_el.wait_for(state="visible", timeout=3000)
     input_el.click(force=True)
-    page.wait_for_timeout(400)
+    page.wait_for_timeout(150)
 
     # ── Confirm calendar is open (header readable within this container) ──
     header_loc = container.locator(".rmdp-header-values")
-    for _ in range(20):
+    for _ in range(10):
         try:
-            txt = header_loc.text_content(timeout=300)
+            txt = header_loc.text_content(timeout=200)
             m, y = _parse_header_text(txt)
             if m is not None and y is not None:
                 break
         except Exception:
             pass
-        page.wait_for_timeout(150)
+        page.wait_for_timeout(50)
     else:
         # retry click
         input_el.click(force=True)
-        page.wait_for_timeout(500)
+        page.wait_for_timeout(200)
 
     # ── Navigate to the target month/year ──
     arrow_containers = container.locator(".rmdp-arrow-container")
@@ -117,12 +115,12 @@ def _set_rmdp_date(page, picker_index: int, date_str: str, log=None):
 
     for _ in range(150):
         try:
-            txt = header_loc.text_content(timeout=300)
+            txt = header_loc.text_content(timeout=200)
         except Exception:
             txt = ""
         cur_m, cur_y = _parse_header_text(txt)
         if cur_m is None or cur_y is None:
-            page.wait_for_timeout(150)
+            page.wait_for_timeout(30)
             continue
         if cur_y == target_year and cur_m == target_month:
             break
@@ -130,7 +128,7 @@ def _set_rmdp_date(page, picker_index: int, date_str: str, log=None):
             arrow_containers.first.click(force=True)    # left arrow
         else:
             arrow_containers.last.click(force=True)     # right arrow
-        page.wait_for_timeout(100)
+        page.wait_for_timeout(30)
     else:
         raise Exception(f"Could not navigate calendar to {target_month}/{target_year}")
 
@@ -148,7 +146,7 @@ def _set_rmdp_date(page, picker_index: int, date_str: str, log=None):
     if not clicked:
         raise Exception(f"Could not find day {target_day} in calendar")
 
-    page.wait_for_timeout(200)
+    page.wait_for_timeout(50)
     if log:
         log(f"Date picker {picker_index + 1} → {date_str}")
 
@@ -163,8 +161,8 @@ def _set_input_value(page, selector: str, value: str, field_name: str,
     Set a text input value via the React nativeInputValueSetter trick.
     Waits for the field to exist and be enabled before writing.
     """
-    # Wait for field to be ready (present + enabled), max ~6 s
-    for _ in range(30):
+    # Wait for field to be ready (present + enabled)
+    for _ in range(20):
         state = page.evaluate("""(sel) => {
             var el = document.querySelector(sel);
             if (!el) return 'missing';
@@ -173,7 +171,7 @@ def _set_input_value(page, selector: str, value: str, field_name: str,
         }""", selector)
         if state == "ready":
             break
-        page.wait_for_timeout(200)
+        page.wait_for_timeout(50)
 
     page.evaluate("""(args) => {
         var sel = args[0], val = args[1];
@@ -187,7 +185,6 @@ def _set_input_value(page, selector: str, value: str, field_name: str,
         el.dispatchEvent(new Event('change', { bubbles: true }));
         el.blur();
     }""", [selector, value])
-    page.wait_for_timeout(50)
 
     if log:
         log(f"{field_name}: {value}")
@@ -213,7 +210,6 @@ def _select_dropdown(page, value: str, field_name: str, log=None):
             dd = page.locator(sel).first
             if dd.is_visible(timeout=1000):
                 dd.select_option(value=value)
-                page.wait_for_timeout(50)
                 if log:
                     log(f"{field_name}: value={value}")
                 return
@@ -229,7 +225,6 @@ def _select_dropdown(page, value: str, field_name: str, log=None):
         setter.call(el, val);
         el.dispatchEvent(new Event('change', { bubbles: true }));
     }""", value)
-    page.wait_for_timeout(50)
     if log:
         log(f"{field_name}: value={value} (JS fallback)")
 
@@ -329,7 +324,7 @@ def _tick_declaration(page, log=None):
             cb.click();                       // .click() triggers React onChange
         }
     }""")
-    page.wait_for_timeout(200)
+    page.wait_for_timeout(50)
     if log:
         log("Declaration checkbox ticked")
 
@@ -364,7 +359,7 @@ def fill_claim_form(page, row_data: dict, profile: dict, log_callback=None):
                      f"IS Submission Type ({submission_type})", log)
 
     # React re-render after dropdown — date pickers appear
-    page.wait_for_timeout(500)
+    page.wait_for_timeout(150)
 
     # ── 2. First Loan Disbursal Date ──────────────────────────
     disbursal_date = row_data.get("first_disbursal_date", "")
@@ -374,7 +369,7 @@ def fill_claim_form(page, row_data: dict, profile: dict, log_callback=None):
         log("WARNING: First Disbursal Date is empty")
 
     # Rollover field unlocks after disbursal is filled
-    page.wait_for_timeout(500)
+    page.wait_for_timeout(100)
 
     # ── 3. Interest Cycle end / Rollover Date ─────────────────
     rollover_date = row_data.get("rollover_date", "")
@@ -384,7 +379,7 @@ def fill_claim_form(page, row_data: dict, profile: dict, log_callback=None):
         log("WARNING: Rollover Date is empty")
 
     # Amount fields unlock after both dates are filled
-    page.wait_for_timeout(500)
+    page.wait_for_timeout(100)
 
     # ── 4. Max Withdrawal Amount ──────────────────────────────
     max_withdrawal = row_data.get("max_withdrawal", "")
@@ -395,7 +390,7 @@ def fill_claim_form(page, row_data: dict, profile: dict, log_callback=None):
         log("WARNING: Max Withdrawal Amount is empty")
 
     # Wait for auto-calculation of Maximum Allowed Claim
-    page.wait_for_timeout(500)
+    page.wait_for_timeout(100)
 
     # ── 5. Applicable IS Amount ───────────────────────────────
     applicable_is = row_data.get("applicable_is", "")
@@ -405,7 +400,7 @@ def fill_claim_form(page, row_data: dict, profile: dict, log_callback=None):
     else:
         log("WARNING: Applicable IS Amount is empty")
 
-    page.wait_for_timeout(300)
+    page.wait_for_timeout(100)
 
     # ── 6. Check for portal validation errors ─────────────────
     _check_form_errors(page, log)

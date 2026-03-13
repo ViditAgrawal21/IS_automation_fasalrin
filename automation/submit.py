@@ -22,17 +22,16 @@ def save_and_continue(page, log_callback=None):
 
     try:
         save_btn = page.locator("button.genGreenBtn:has-text('SAVE & CONTINUE')").first
-        save_btn.wait_for(state="visible", timeout=10000)
+        save_btn.wait_for(state="visible", timeout=5000)
 
         # Wait for the button to become enabled (form must be valid)
-        for _ in range(30):
+        for _ in range(20):
             disabled = save_btn.get_attribute("disabled")
             if disabled is None:
                 break
-            page.wait_for_timeout(200)
+            page.wait_for_timeout(50)
 
         save_btn.click()
-        page.wait_for_timeout(100)
     except Exception as e:
         raise Exception(f"Could not click SAVE & CONTINUE: {e}")
 
@@ -59,13 +58,11 @@ def submit_claim(page, log_callback=None):
 
     # Wait for the preview/review page to fully load after SAVE & CONTINUE
     page.wait_for_load_state("domcontentloaded")
-    page.wait_for_timeout(500)
 
     try:
         submit_btn = page.locator("button.genGreenBtn:has-text('SUBMIT')").first
-        submit_btn.wait_for(state="visible", timeout=15000)
+        submit_btn.wait_for(state="visible", timeout=10000)
         submit_btn.click()
-        page.wait_for_timeout(100)
     except Exception as e:
         raise Exception(f"Could not click SUBMIT: {e}")
 
@@ -79,7 +76,6 @@ def submit_claim(page, log_callback=None):
         ).first
         if confirm_btn.is_visible(timeout=2000):
             confirm_btn.click()
-            page.wait_for_timeout(100)
             log("Confirmation accepted")
     except Exception:
         pass  # No confirmation dialog, that's fine
@@ -221,9 +217,8 @@ def _handle_modal(page, log, expected_text: str, action_name: str):
         # Wait for SweetAlert2 popup
         page.wait_for_selector(
             ".swal2-popup, .swal2-container, .modal.show",
-            timeout=15000
+            timeout=10000
         )
-        page.wait_for_timeout(50)
 
         # Read modal text
         modal_text = page.evaluate("""() => {
@@ -243,7 +238,7 @@ def _handle_modal(page, log, expected_text: str, action_name: str):
 
     # Always click OK to dismiss the modal so the page can proceed
     _click_ok_button(page)
-    page.wait_for_timeout(300)
+    page.wait_for_timeout(100)
 
 
 def _click_ok_button(page):
@@ -259,9 +254,8 @@ def _click_ok_button(page):
     ]:
         try:
             btn = page.locator(selector).first
-            if btn.is_visible(timeout=1000):
+            if btn.is_visible(timeout=500):
                 btn.click()
-                page.wait_for_timeout(30)
                 return
         except Exception:
             continue

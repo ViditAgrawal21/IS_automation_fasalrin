@@ -84,9 +84,9 @@ def start_browser(profile_name: str = None, headless: bool = False):
     else:
         context = browser.new_context(no_viewport=True)
 
-    # Set default timeouts — aggressive for speed
-    context.set_default_timeout(15000)
-    context.set_default_navigation_timeout(30000)
+    # Set default timeouts — ultra-fast
+    context.set_default_timeout(8000)
+    context.set_default_navigation_timeout(15000)
 
     page = context.new_page()
     return p, browser, context, page

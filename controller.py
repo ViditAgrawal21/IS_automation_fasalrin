@@ -107,9 +107,8 @@ def _reset_page_for_next_row(page, log):
     for txt in ["OK", "Close", "×"]:
         try:
             btn = page.locator(f"button:has-text('{txt}')").first
-            if btn.is_visible(timeout=300):
+            if btn.is_visible(timeout=200):
                 btn.click()
-                page.wait_for_timeout(30)
         except Exception:
             pass
 

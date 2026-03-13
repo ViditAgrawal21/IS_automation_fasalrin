@@ -65,7 +65,6 @@ def select_filters_and_proceed(page, profile: dict, log_callback=None):
                 }
             }
         }""", fy)
-        page.wait_for_timeout(30)
     except Exception as e:
         raise Exception(f"Could not select Financial Year '{fy}': {e}")
 
@@ -79,7 +78,6 @@ def select_filters_and_proceed(page, profile: dict, log_callback=None):
             sel.value = val;
             sel.dispatchEvent(new Event('change', { bubbles: true }));
         }""", claim_type_val)
-        page.wait_for_timeout(30)
     except Exception as e:
         raise Exception(f"Could not select Claim Type '{claim_type}': {e}")
 
@@ -93,7 +91,6 @@ def select_filters_and_proceed(page, profile: dict, log_callback=None):
             sel.value = val;
             sel.dispatchEvent(new Event('change', { bubbles: true }));
         }""", claim_status_val)
-        page.wait_for_timeout(30)
     except Exception as e:
         raise Exception(f"Could not select Claim Status '{claim_status}': {e}")
 
@@ -103,7 +100,6 @@ def select_filters_and_proceed(page, profile: dict, log_callback=None):
         proceed_btn = page.locator("button.genGreenBtn:has-text('PROCEED')").first
         proceed_btn.wait_for(state="visible", timeout=5000)
         proceed_btn.click()
-        page.wait_for_timeout(100)
         log("PROCEED clicked — loading claim list")
     except Exception as e:
         raise Exception(f"Could not click PROCEED: {e}")
@@ -149,7 +145,6 @@ def search_loan_application(page, loan_app_no: str, log_callback=None):
             el.dispatchEvent(new Event('input', { bubbles: true }));
             el.dispatchEvent(new Event('change', { bubbles: true }));
         }""", loan_app_no)
-        page.wait_for_timeout(30)
     except Exception as e:
         raise Exception(f"Could not fill search input: {e}")
 
@@ -158,23 +153,22 @@ def search_loan_application(page, loan_app_no: str, log_callback=None):
         search_btn = page.locator("button.btn-secondary").first
         if search_btn.is_visible(timeout=2000):
             search_btn.click()
-            page.wait_for_timeout(300)
+            page.wait_for_timeout(100)
             log("Search executed")
         else:
             search_input.press("Enter")
-            page.wait_for_timeout(300)
+            page.wait_for_timeout(100)
             log("Search executed (Enter key)")
     except Exception:
         try:
             search_input = page.locator("input[type='search']").first
             search_input.press("Enter")
-            page.wait_for_timeout(300)
+            page.wait_for_timeout(100)
             log("Search executed (Enter fallback)")
         except Exception as e:
             raise Exception(f"Could not execute search: {e}")
 
     # ── Check if results exist ──
-    page.wait_for_timeout(200)
     no_results = page.evaluate("""() => {
         // Check for "No data available" or empty table body
         var body = document.body.innerText || '';
@@ -227,7 +221,6 @@ def click_add_button(page, log_callback=None):
 
         add_btn.wait_for(state="visible", timeout=10000)
         add_btn.click()
-        page.wait_for_timeout(100)
         log("ADD clicked — claim form loading")
     except Exception as e:
         raise Exception(
