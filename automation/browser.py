@@ -6,11 +6,17 @@ Saves/loads browser storage state to avoid repeated captcha entry.
 import sys
 import os
 import subprocess
+import shutil
 
-# When running as a frozen .exe, tell Playwright where to find bundled browsers
+# When running as a frozen .exe, check for bundled browsers first,
+# then fall back to system-installed browsers in %LOCALAPPDATA%\ms-playwright
 if getattr(sys, "frozen", False):
-    _browsers_path = os.path.join(os.path.dirname(sys.executable), "browsers")
-    os.environ["PLAYWRIGHT_BROWSERS_PATH"] = _browsers_path
+    _bundled = os.path.join(os.path.dirname(sys.executable), "browsers")
+    _system = os.path.join(os.environ.get("LOCALAPPDATA", ""), "ms-playwright")
+    if os.path.isdir(_bundled):
+        os.environ["PLAYWRIGHT_BROWSERS_PATH"] = _bundled
+    elif os.path.isdir(_system):
+        os.environ["PLAYWRIGHT_BROWSERS_PATH"] = _system
 
 from playwright.sync_api import sync_playwright
 from path_helper import get_app_dir
@@ -21,6 +27,20 @@ SESSION_DIR = os.path.join(get_app_dir(), "profiles")
 def _get_session_path(profile_name: str) -> str:
     """Get the session storage file path for a profile."""
     return os.path.join(SESSION_DIR, f"{profile_name}_session.json")
+
+
+def _install_playwright_chromium():
+    """Install Playwright chromium — works for both script and frozen exe."""
+    if getattr(sys, "frozen", False):
+        # In frozen exe, find the real Python or use playwright CLI directly
+        # Try to find playwright in PATH or use the bundled driver
+        from playwright._impl._driver import compute_driver_executable
+        driver = compute_driver_executable()
+        if isinstance(driver, tuple):
+            driver = driver[0]
+        subprocess.check_call([str(driver), "install", "chromium"])
+    else:
+        subprocess.check_call([sys.executable, "-m", "playwright", "install", "chromium"])
 
 
 def start_browser(profile_name: str = None, headless: bool = False):
@@ -42,8 +62,7 @@ def start_browser(profile_name: str = None, headless: bool = False):
         )
     except Exception as e:
         if "Executable doesn't exist" in str(e):
-            # Auto-install the required browser
-            subprocess.check_call([sys.executable, "-m", "playwright", "install", "chromium"])
+            _install_playwright_chromium()
             browser = p.chromium.launch(
                 headless=headless,
                 args=["--start-maximized"]

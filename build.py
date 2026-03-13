@@ -33,17 +33,14 @@ def build():
 
     # Find Playwright browser path
     pw_browsers = None
-    try:
-        from playwright._impl._driver import compute_driver_executable
-        driver_exec = compute_driver_executable()
-        pw_dir = os.path.dirname(driver_exec)
-        # Check common Playwright browser locations
-        local_browsers = os.path.join(os.path.expanduser("~"), "AppData", "Local", "ms-playwright")
-        if os.path.exists(local_browsers):
-            pw_browsers = local_browsers
-            print(f"Playwright browsers: {pw_browsers}")
-    except Exception as e:
-        print(f"Warning: Could not locate Playwright browsers: {e}")
+    # Check default Playwright browser location
+    local_browsers = os.path.join(os.environ.get("LOCALAPPDATA", ""), "ms-playwright")
+    if os.path.isdir(local_browsers):
+        pw_browsers = local_browsers
+        print(f"Playwright browsers found: {pw_browsers}")
+    else:
+        print(f"Warning: Playwright browsers not found at {local_browsers}")
+        print("Run 'playwright install chromium' first, or the exe will auto-install on first run.")
 
     # Build command
     cmd = [
