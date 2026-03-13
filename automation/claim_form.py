@@ -31,18 +31,29 @@ def _parse_date(date_str: str):
 
 
 def _parse_header_text(header_text: str):
-    """Parse 'April, 2022' → (4, 2022).  Returns (None, None) on failure."""
+    """Parse 'April, 2022' or 'April2022' or 'April 2022' → (4, 2022)."""
     if not header_text:
         return None, None
     text = header_text.lower().replace(",", " ")
     month_num = None
     year = None
+    # Try splitting by whitespace first
     for part in text.split():
         p = part.strip()
         if p in MONTH_NAMES:
             month_num = MONTH_NAMES[p]
         elif p.isdigit() and len(p) == 4:
             year = int(p)
+    # If no split worked, try matching month name anywhere in the text
+    if month_num is None or year is None:
+        import re
+        for name, num in MONTH_NAMES.items():
+            if name in text:
+                month_num = num
+                break
+        year_match = re.search(r'(\d{4})', text)
+        if year_match:
+            year = int(year_match.group(1))
     return month_num, year
 
 
@@ -51,27 +62,34 @@ def _parse_header_text(header_text: str):
 # ═══════════════════════════════════════════════════════════════
 
 def _close_any_calendar(page):
-    """Close any lingering rmdp calendar popup by blurring & clicking away."""
-    page.evaluate("""() => {
-        if (document.activeElement) document.activeElement.blur();
-        var h = document.querySelector('h1,h2,h3,h4,h5,h6,.heading,.card-header');
-        if (h) h.click();
-    }""")
+    """Close any lingering rmdp calendar popup with a real trusted mouse click outside."""
+    page.evaluate("() => { if (document.activeElement) document.activeElement.blur(); }")
+    safe = page.locator("h1#skipcontent, h1, .card-header, .card-title").first
+    try:
+        box = safe.bounding_box()
+        if box:
+            page.mouse.click(box["x"] + box["width"] / 2,
+                             box["y"] + box["height"] / 2)
+        else:
+            page.mouse.click(10, 10)
+    except Exception:
+        page.mouse.click(10, 10)
+    page.wait_for_timeout(200)
 
 
 def _set_rmdp_date(page, picker_index: int, date_str: str, log=None):
     """
-    Set a date in a React Modern DatePicker by navigating the calendar UI.
+    Set a date in a React Modern DatePicker.
 
-    All operations are scoped to the specific .rmdp-container at picker_index,
-    so multiple calendars in the DOM don't interfere with each other.
-
-    Steps:
-      1. Click input inside the container → opens that container's calendar
-      2. Read header from that container → navigate arrows to target month/year
-      3. Click the target day inside that container → calendar auto-closes
+    Tries multiple strategies in order:
+      A) Type date directly into the input field (bypasses calendar UI)
+      B) nativeInputValueSetter + React change event
+      C) Calendar UI navigation + page.mouse.click at bounding-box coords
     """
     target_day, target_month, target_year = _parse_date(date_str)
+    formatted = f"{target_day:02d}/{target_month:02d}/{target_year}"
+    if log:
+        log(f"Calendar {picker_index+1}: setting {formatted}")
 
     _close_any_calendar(page)
 
@@ -87,68 +105,247 @@ def _set_rmdp_date(page, picker_index: int, date_str: str, log=None):
 
     container = containers.nth(picker_index)
 
-    # ── Click the input to open the calendar popup ──
+    # ── Get the input and wait for it to be enabled ──
     input_el = container.locator(".rmdp-input")
     input_el.wait_for(state="visible", timeout=3000)
-    input_el.click(force=True)
-    page.wait_for_timeout(150)
 
-    # ── Confirm calendar is open (header readable within this container) ──
+    for _wait in range(40):
+        disabled = input_el.evaluate("el => el.disabled || el.readOnly")
+        if not disabled:
+            break
+        page.wait_for_timeout(100)
+
+    # ══════════════════════════════════════════════════════════
+    # Strategy A: Type the date directly into the input field
+    # ══════════════════════════════════════════════════════════
+    input_el.click(force=True)
+    page.wait_for_timeout(200)
+    page.keyboard.press("Control+a")
+    page.keyboard.press("Delete")
+    page.wait_for_timeout(100)
+    input_el.press_sequentially(formatted, delay=50)
+    page.wait_for_timeout(400)
+
+    input_val = input_el.evaluate("el => el.value")
+    if input_val:
+        _close_any_calendar(page)
+        if log:
+            log(f"Date picker {picker_index+1} → {input_val} (typed)")
+        return
+
+    if log:
+        log(f"Calendar {picker_index+1}: typing didn't set value, trying nativeInputValueSetter...")
+
+    # ══════════════════════════════════════════════════════════
+    # Strategy B: nativeInputValueSetter + React synthetic event
+    # ══════════════════════════════════════════════════════════
+    container.evaluate("""(c, val) => {
+        var input = c.querySelector('.rmdp-input');
+        var setter = Object.getOwnPropertyDescriptor(
+            window.HTMLInputElement.prototype, 'value').set;
+        setter.call(input, val);
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        input.dispatchEvent(new Event('change', { bubbles: true }));
+    }""", formatted)
+    page.wait_for_timeout(500)
+
+    input_val = input_el.evaluate("el => el.value")
+    if input_val:
+        _close_any_calendar(page)
+        if log:
+            log(f"Date picker {picker_index+1} → {input_val} (nativeSetter)")
+        return
+
+    if log:
+        log(f"Calendar {picker_index+1}: nativeSetter didn't persist, trying calendar UI...")
+
+    # ══════════════════════════════════════════════════════════
+    # Strategy C: Calendar UI navigation + mouse click
+    # ══════════════════════════════════════════════════════════
+    _close_any_calendar(page)
+    input_el.click(force=True)
+    page.wait_for_timeout(300)
+
+    # Verify calendar popup appeared
     header_loc = container.locator(".rmdp-header-values")
-    for _ in range(10):
+    cal_open = False
+    for attempt in range(8):
         try:
-            txt = header_loc.text_content(timeout=200)
+            txt = header_loc.text_content(timeout=300)
             m, y = _parse_header_text(txt)
             if m is not None and y is not None:
+                cal_open = True
                 break
         except Exception:
             pass
-        page.wait_for_timeout(50)
-    else:
-        # retry click
         input_el.click(force=True)
-        page.wait_for_timeout(200)
+        page.wait_for_timeout(400)
 
-    # ── Navigate to the target month/year ──
+    if not cal_open:
+        raise Exception(
+            f"Calendar {picker_index+1} popup did not open — "
+            f"field may be disabled/locked. Check if previous date was set correctly."
+        )
+
+    if log:
+        log(f"Calendar {picker_index+1}: header reads '{txt}' → {m}/{y}")
+
+    # Navigate to the target month/year
     arrow_containers = container.locator(".rmdp-arrow-container")
-    # DOM order: first = left (<), last = right (>)
 
-    for _ in range(150):
+    for step in range(150):
         try:
-            txt = header_loc.text_content(timeout=200)
+            txt = header_loc.text_content(timeout=300)
         except Exception:
             txt = ""
         cur_m, cur_y = _parse_header_text(txt)
         if cur_m is None or cur_y is None:
-            page.wait_for_timeout(30)
+            page.wait_for_timeout(50)
             continue
         if cur_y == target_year and cur_m == target_month:
             break
-        if (target_year, target_month) < (cur_y, cur_m):
-            arrow_containers.first.click(force=True)    # left arrow
+        direction = "left" if (target_year, target_month) < (cur_y, cur_m) else "right"
+        if direction == "left":
+            arrow_containers.first.click(force=True)
         else:
-            arrow_containers.last.click(force=True)     # right arrow
-        page.wait_for_timeout(30)
+            arrow_containers.last.click(force=True)
+        for _w in range(30):
+            page.wait_for_timeout(30)
+            try:
+                new_txt = header_loc.text_content(timeout=100)
+            except Exception:
+                new_txt = txt
+            if new_txt != txt:
+                break
+        else:
+            if direction == "left":
+                arrow_containers.first.click()
+            else:
+                arrow_containers.last.click()
+            page.wait_for_timeout(100)
     else:
+        if log:
+            try:
+                final_txt = header_loc.text_content(timeout=300)
+            except Exception:
+                final_txt = "(unreadable)"
+            log(f"Calendar STUCK: header='{final_txt}', target={target_month}/{target_year}")
         raise Exception(f"Could not navigate calendar to {target_month}/{target_year}")
 
-    # ── Click the target day ──
-    clicked = container.evaluate("""(el, day) => {
-        var days = el.querySelectorAll('.rmdp-day:not(.rmdp-deactive) span');
-        for (var i = 0; i < days.length; i++) {
-            if (days[i].textContent.trim() === String(day)) {
-                days[i].click();
-                return true;
-            }
-        }
-        return false;
-    }""", target_day)
-    if not clicked:
+    # Find the target day and check if it's disabled
+    day_divs = container.locator(".rmdp-day:not(.rmdp-deactive)")
+    target_day_el = None
+    target_span_el = None
+    actual_day = target_day
+
+    for i in range(day_divs.count()):
+        day_div = day_divs.nth(i)
+        span = day_div.locator("span")
+        try:
+            txt = span.text_content(timeout=100)
+        except Exception:
+            continue
+        if txt.strip() == str(target_day):
+            target_day_el = day_div
+            target_span_el = span
+            break
+
+    if target_day_el is None:
         raise Exception(f"Could not find day {target_day} in calendar")
 
-    page.wait_for_timeout(50)
+    # Check if the day is disabled (rmdp uses .rmdp-disabled class)
+    day_classes = target_day_el.evaluate("el => el.className")
+
+    if "rmdp-disabled" in day_classes:
+        if log:
+            log(f"Calendar {picker_index+1}: day {target_day} is DISABLED — "
+                f"finding first enabled day in this month...")
+        # Find the first enabled (non-disabled, non-deactive) day
+        all_days = container.locator(".rmdp-day:not(.rmdp-deactive):not(.rmdp-disabled)")
+        found_enabled = False
+        for j in range(all_days.count()):
+            en_div = all_days.nth(j)
+            en_span = en_div.locator("span")
+            try:
+                en_txt = en_span.text_content(timeout=100).strip()
+            except Exception:
+                continue
+            if en_txt.isdigit():
+                actual_day = int(en_txt)
+                target_day_el = en_div
+                target_span_el = en_span
+                found_enabled = True
+                if log:
+                    log(f"Calendar {picker_index+1}: using first enabled day → {actual_day}")
+                break
+        if not found_enabled:
+            raise Exception(
+                f"No enabled days in calendar for {target_month}/{target_year}. "
+                f"All dates appear disabled."
+            )
+
+    # Click the day using page.mouse at bounding box
+    box = target_span_el.bounding_box()
+    if box:
+        page.mouse.click(box["x"] + box["width"] / 2,
+                         box["y"] + box["height"] / 2)
+    else:
+        target_day_el.click(force=True)
+
+    page.wait_for_timeout(300)
+    input_val = input_el.evaluate("el => el.value")
+
+    if not input_val:
+        if log:
+            log(f"Calendar {picker_index+1}: mouse.click didn't register, trying fiber...")
+        # Walk React fiber tree and invoke onClick directly
+        fiber_result = container.evaluate("""(el, day) => {
+            var dayDivs = el.querySelectorAll('.rmdp-day:not(.rmdp-deactive)');
+            for (var i = 0; i < dayDivs.length; i++) {
+                var span = dayDivs[i].querySelector('span');
+                if (!span || span.textContent.trim() !== String(day)) continue;
+                var targets = [dayDivs[i], span];
+                for (var t = 0; t < targets.length; t++) {
+                    var node = targets[t];
+                    var keys = Object.keys(node);
+                    var propKey = keys.find(function(k) { return k.startsWith('__reactProps$'); });
+                    if (propKey) {
+                        var props = node[propKey];
+                        if (props && typeof props.onClick === 'function') {
+                            props.onClick(new MouseEvent('click', {bubbles:true}));
+                            return 'reactProps_' + t;
+                        }
+                    }
+                    var fiberKey = keys.find(function(k) {
+                        return k.startsWith('__reactFiber$') || k.startsWith('__reactInternalInstance$');
+                    });
+                    if (fiberKey) {
+                        var cur = node[fiberKey];
+                        while (cur) {
+                            var p = cur.memoizedProps || cur.pendingProps;
+                            if (p && typeof p.onClick === 'function') {
+                                p.onClick(new MouseEvent('click', {bubbles:true}));
+                                return 'fiber_' + t;
+                            }
+                            cur = cur.return;
+                        }
+                    }
+                }
+                return 'no_handler';
+            }
+            return 'not_found';
+        }""", actual_day)
+        if log:
+            log(f"Calendar {picker_index+1}: fiber result = {fiber_result}")
+        page.wait_for_timeout(400)
+        input_val = input_el.evaluate("el => el.value")
+
+    if not input_val and log:
+        log(f"Calendar {picker_index+1}: WARNING — input still empty after all strategies")
+
+    _close_any_calendar(page)
     if log:
-        log(f"Date picker {picker_index + 1} → {date_str}")
+        log(f"Date picker {picker_index+1} → {actual_day:02d}/{target_month:02d}/{target_year}")
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -368,8 +565,8 @@ def fill_claim_form(page, row_data: dict, profile: dict, log_callback=None):
     else:
         log("WARNING: First Disbursal Date is empty")
 
-    # Rollover field unlocks after disbursal is filled
-    page.wait_for_timeout(100)
+    # Rollover field unlocks after disbursal is filled — must wait for React
+    page.wait_for_timeout(500)
 
     # ── 3. Interest Cycle end / Rollover Date ─────────────────
     rollover_date = row_data.get("rollover_date", "")
