@@ -5,6 +5,7 @@ Saves/loads browser storage state to avoid repeated captcha entry.
 
 import sys
 import os
+import subprocess
 
 # When running as a frozen .exe, tell Playwright where to find bundled browsers
 if getattr(sys, "frozen", False):
@@ -34,10 +35,21 @@ def start_browser(profile_name: str = None, headless: bool = False):
         tuple: (playwright_instance, browser, context, page)
     """
     p = sync_playwright().start()
-    browser = p.chromium.launch(
-        headless=headless,
-        args=["--start-maximized"]
-    )
+    try:
+        browser = p.chromium.launch(
+            headless=headless,
+            args=["--start-maximized"]
+        )
+    except Exception as e:
+        if "Executable doesn't exist" in str(e):
+            # Auto-install the required browser
+            subprocess.check_call([sys.executable, "-m", "playwright", "install", "chromium"])
+            browser = p.chromium.launch(
+                headless=headless,
+                args=["--start-maximized"]
+            )
+        else:
+            raise
 
     # Try to load existing session
     session_path = _get_session_path(profile_name) if profile_name else None
